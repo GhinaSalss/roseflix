@@ -1,212 +1,161 @@
-import { dramas } from "../data/dramas.js";
-import {
-  toggleFavorite,
-  isFavorite,
-  isPurchased,
-  addPurchased,
-} from "./storage.js";
+import { api, IMAGE_BASE_URL } from "./api.js";
+import storage from "./storage.js";
+import Modal from "../components/modal.js";
+import Toast from "../components/toast.js";
 
-// Get drama ID from URL
 const urlParams = new URLSearchParams(window.location.search);
-const dramaId = urlParams.get("id");
+const movieId = urlParams.get("id");
 
-// DOM Elements
-const loadingState = document.getElementById("loadingState");
-const dramaContent = document.getElementById("dramaContent");
-const errorState = document.getElementById("errorState");
-const favoriteBtn = document.getElementById("favoriteBtn");
-const actionBtn = document.getElementById("actionBtn");
-const purchaseModal = document.getElementById("purchaseModal");
-const cancelBtn = document.getElementById("cancelBtn");
-const confirmBtn = document.getElementById("confirmBtn");
-const thumbnailSection = document.getElementById("thumbnailSection");
-const playerSection = document.getElementById("playerSection");
+const elements = {
+  poster: document.getElementById("movie-poster"),
+  title: document.getElementById("movie-title"),
+  year: document.getElementById("movie-year"),
+  genres: document.getElementById("movie-genres"),
+  rating: document.getElementById("movie-rating"),
+  ratingCircle: document.getElementById("rating-circle"),
+  budget: document.getElementById("movie-budget"),
+  revenue: document.getElementById("movie-revenue"),
+  popularity: document.getElementById("movie-popularity"),
+  overview: document.getElementById("movie-overview"),
+  castContainer: document.getElementById("cast-container"),
+  unlockBtn: document.getElementById("unlock-btn"),
+  btnText: document.getElementById("btn-text"),
+  favoriteBtn: document.getElementById("favorite-btn"),
+};
 
-// Current drama
-let currentDrama = null;
-let isUnlocked = false;
+let currentMovie = null;
 
-// Initialize
-function init() {
-  if (!dramaId) {
-    showError();
+async function init() {
+  if (!movieId) {
+    window.location.href = "index.html";
     return;
   }
 
-  currentDrama = dramas.find((d) => d.youtubeId === dramaId);
-
-  if (!currentDrama) {
-    showError();
+  const movie = await api.getMovieDetail(movieId);
+  if (!movie) {
+    Toast.show("Movie data not found", "error");
     return;
   }
 
-  // Check if unlocked (free or purchased)
-  isUnlocked = currentDrama.price === 0 || isPurchased(dramaId);
-
-  renderDrama();
-
-  // Update favorite button after Lucide Icons are initialized (called in renderDrama)
-  setTimeout(() => updateFavoriteButton(), 100);
-
-  // Event listeners
-  favoriteBtn.addEventListener("click", handleFavoriteToggle);
-  actionBtn.addEventListener("click", handleAction);
-  cancelBtn.addEventListener("click", closeModal);
-  confirmBtn.addEventListener("click", handlePurchase);
+  currentMovie = movie;
+  renderDetail(movie);
+  updateFavoriteUI();
+  updateUnlockUI();
+  setupEventListeners();
 }
 
-function showError() {
-  loadingState.classList.add("hidden");
-  errorState.classList.remove("hidden");
+function calculatePrice(budget) {
+  if (budget === 0) return "FREE";
+  return "Rp " + (budget / 1000).toLocaleString("id-ID");
 }
 
-function renderDrama() {
-  loadingState.classList.add("hidden");
-  dramaContent.classList.remove("hidden");
+function renderDetail(movie) {
+  elements.poster.src = `${IMAGE_BASE_URL}${movie.poster_path}`;
+  elements.title.textContent = movie.title;
+  elements.year.textContent = movie.release_date
+    ? movie.release_date.split("-")[0]
+    : "N/A";
+  elements.genres.textContent = movie.genres
+    .map((g) => g.name)
+    .slice(0, 2)
+    .join(" / ");
+  elements.rating.textContent = movie.vote_average.toFixed(1);
 
-  // Thumbnail
-  document.getElementById("dramaThumbnail").src = currentDrama.thumbnail;
-  document.getElementById("dramaThumbnail").alt = currentDrama.title;
+  // Rating Circle Animation
+  const offset = 175.9 - (175.9 * movie.vote_average) / 10;
+  setTimeout(() => {
+    elements.ratingCircle.style.strokeDashoffset = offset;
+  }, 100);
 
-  // Badge
-  const badge = document.getElementById("dramaBadge");
-  if (currentDrama.price === 0) {
-    badge.className =
-      "absolute top-4 right-4 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg bg-gradient-to-r from-green-500 to-emerald-600";
-    badge.textContent = "FREE";
-  } else {
-    badge.className =
-      "absolute top-4 right-4 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg bg-gradient-to-r from-pink-500 to-rose-600";
-    badge.textContent = `Rp ${currentDrama.price.toLocaleString("id-ID")}`;
-  }
+  elements.budget.textContent = movie.budget
+    ? `$${(movie.budget / 1000000).toFixed(0)}M`
+    : "N/A";
+  elements.revenue.textContent = movie.revenue
+    ? `$${(movie.revenue / 1000000).toFixed(0)}M`
+    : "N/A";
+  elements.popularity.textContent = movie.popularity.toFixed(1) + "%";
+  elements.overview.textContent = movie.overview;
 
-  // Info
-  document.getElementById("dramaTitle").textContent = currentDrama.title;
-  document.getElementById("dramaGenre").textContent = currentDrama.genre;
-  document.getElementById("dramaViews").textContent =
-    formatViews(currentDrama.views) + " views";
-  document.getElementById("dramaDate").textContent = formatDate(
-    currentDrama.createdAt,
-  );
-  document.getElementById("dramaDescription").textContent =
-    currentDrama.description;
-
-  // Action button
-  updateActionButton();
-
-  // Re-initialize icons
-  lucide.createIcons();
-}
-
-function updateActionButton() {
-  if (isUnlocked) {
-    actionBtn.className =
-      "w-full py-4 rounded-2xl text-white font-bold shadow-lg flex items-center justify-center gap-2 btn-success";
-    actionBtn.innerHTML =
-      '<i data-lucide="play-circle" class="w-6 h-6"></i><span id="btnText">Tonton Sekarang</span>';
-  } else {
-    actionBtn.className =
-      "w-full py-4 rounded-2xl text-white font-bold shadow-lg flex items-center justify-center gap-2 btn-primary";
-    actionBtn.innerHTML = `<i data-lucide="lock" class="w-6 h-6"></i><span id="btnText">Beli Drama - Rp ${currentDrama.price.toLocaleString("id-ID")}</span>`;
-  }
-
-  lucide.createIcons();
-}
-
-function handleAction() {
-  if (isUnlocked) {
-    showPlayer();
-  } else {
-    showPurchaseModal();
+  // Cast
+  if (movie.credits && movie.credits.cast) {
+    elements.castContainer.innerHTML = movie.credits.cast
+      .slice(0, 10)
+      .map(
+        (person) => `
+            <div class="flex-shrink-0 w-20 text-center space-y-2">
+                <div class="w-16 h-16 rounded-full overflow-hidden mx-auto border-2 border-white/10 p-[2px]">
+                    <img src="${IMAGE_BASE_URL}${person.profile_path}" class="w-full h-full object-cover rounded-full bg-gray-900" 
+                         onerror="this.src='https://api.dicebear.com/7.x/initials/svg?seed=${person.name}'">
+                </div>
+                <p class="text-[9px] font-bold text-white truncate px-1">${person.name}</p>
+                <p class="text-[8px] text-gray-500 truncate px-1">${person.character}</p>
+            </div>
+        `,
+      )
+      .join("");
   }
 }
 
-function showPlayer() {
-  // Hide thumbnail, show player
-  thumbnailSection.classList.add("hidden");
-  playerSection.classList.remove("hidden");
-
-  // Load YouTube embed
-  const iframe = document.getElementById("youtubePlayer");
-  iframe.src = `https://www.youtube.com/embed/${currentDrama.youtubeId}?autoplay=1`;
-
-  // Update button to scroll to player
-  actionBtn.scrollIntoView({ behavior: "smooth", block: "start" });
+function updateFavoriteUI() {
+  const isFavorited = storage.isInWishlist(parseInt(movieId));
+  const icon = elements.favoriteBtn.querySelector("i");
+  if (isFavorited) {
+    icon.className = "fas fa-heart text-pink-500";
+  } else {
+    icon.className = "far fa-heart text-white";
+  }
 }
 
-function showPurchaseModal() {
-  document.getElementById("modalPrice").textContent =
-    `Rp ${currentDrama.price.toLocaleString("id-ID")}`;
-  purchaseModal.classList.add("active");
-  lucide.createIcons();
+function updateUnlockUI() {
+  const budget = currentMovie.budget || 0;
+  const isPaid = budget > 0;
+  const isUnlocked = storage.isUnlocked(parseInt(movieId));
+
+  if (!isPaid || isUnlocked) {
+    elements.unlockBtn.disabled = false;
+    elements.btnText.textContent = "Watch Trailer";
+    elements.unlockBtn.classList.remove("opacity-50", "grayscale");
+  } else {
+    elements.btnText.textContent = `Unlock Required (${calculatePrice(budget)})`;
+    // We don't disable it, because clicking it should trigger the payment modal
+  }
 }
 
-function closeModal() {
-  purchaseModal.classList.remove("active");
-}
+function setupEventListeners() {
+  elements.favoriteBtn.onclick = () => {
+    storage.toggleWishlist(currentMovie);
+    updateFavoriteUI();
+    Toast.show(
+      storage.isInWishlist(currentMovie.id)
+        ? "Added to Wishlist"
+        : "Removed from Wishlist",
+    );
+  };
 
-function handlePurchase() {
-  // Simulate purchase
-  addPurchased(dramaId);
-  isUnlocked = true;
+  elements.unlockBtn.onclick = () => {
+    const budget = currentMovie.budget || 0;
+    const isPaid = budget > 0;
+    const isUnlocked = storage.isUnlocked(currentMovie.id);
 
-  closeModal();
-  updateActionButton();
-
-  // Show success message
-  alert("✅ Pembelian berhasil! Drama sekarang bisa ditonton.");
-}
-
-function updateFavoriteButton() {
-  const icon = favoriteBtn.querySelector("svg");
-  const isFav = isFavorite(dramaId);
-
-  if (icon) {
-    if (isFav) {
-      icon.classList.add("fill-pink-500", "text-pink-500");
-      icon.classList.remove("text-gray-600");
+    if (!isPaid || isUnlocked) {
+      // Find YouTube Trailer
+      const trailer = currentMovie.videos.results.find(
+        (v) => v.type === "Trailer" && v.site === "YouTube",
+      );
+      if (trailer) {
+        Modal.showTrailer(trailer.key);
+      } else {
+        Toast.show("No trailer available for this movie", "error");
+      }
     } else {
-      icon.classList.remove("fill-pink-500", "text-pink-500");
-      icon.classList.add("text-gray-600");
+      // Show Payment Modal
+      Modal.showPayment(currentMovie, calculatePrice(budget), (method) => {
+        storage.addToHistory(currentMovie, calculatePrice(budget), method);
+        updateUnlockUI();
+        Toast.show("Payment Successful! Trailer Unlocked");
+      });
     }
-  }
+  };
 }
 
-function handleFavoriteToggle() {
-  toggleFavorite(dramaId);
-
-  // Update button after a short delay to ensure SVG is rendered
-  setTimeout(() => updateFavoriteButton(), 50);
-
-  const isFav = isFavorite(dramaId);
-  const message = isFav
-    ? "💕 Ditambahkan ke favorit!"
-    : "💔 Dihapus dari favorit";
-
-  // Simple toast notification
-  const toast = document.createElement("div");
-  toast.className =
-    "fixed top-20 left-1/2 -translate-x-1/2 bg-white px-6 py-3 rounded-2xl shadow-xl z-50 font-medium text-gray-800";
-  toast.textContent = message;
-  document.body.appendChild(toast);
-
-  setTimeout(() => toast.remove(), 2000);
-}
-
-function formatViews(views) {
-  if (views >= 1000000) {
-    return (views / 1000000).toFixed(1) + "M";
-  } else if (views >= 1000) {
-    return (views / 1000).toFixed(0) + "K";
-  }
-  return views.toString();
-}
-
-function formatDate(dateString) {
-  const date = new Date(dateString);
-  const options = { year: "numeric", month: "long", day: "numeric" };
-  return date.toLocaleDateString("id-ID", options);
-}
-
-// Start
 init();

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Wishlist | RoseFlix</title>
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#ec4899" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Outfit", sans-serif;
+        background: #0b020c;
+        color: white;
+      }
+      .glass {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen pb-32">
+    <header class="p-8">
+      <h1 class="text-3xl font-black">My Wishlist</h1>
+      <p class="text-gray-500 text-sm font-medium">
+        Favorite movies to watch later
+      </p>
+    </header>
+
+    <div id="wishlist-grid" class="px-8 grid grid-cols-2 gap-4">
+      <!-- Wishlist items -->
+    </div>
+
+    <script type="module">
+      import storage from "./js/storage.js"
+      import Navbar from "./components/navbar.js"
+      import { IMAGE_BASE_URL } from "./js/api.js"
+
+      const grid = document.getElementById("wishlist-grid")
+
+      function init() {
+        Navbar.render("wishlist")
+        renderWishlist()
+      }
+
+      function renderWishlist() {
+        const list = storage.getWishlist()
+        if (list.length === 0) {
+          grid.innerHTML =
+            '<div class="col-span-2 py-40 text-center text-gray-600 font-medium">Your wishlist is empty.</div>'
+          return
+        }
+
+        grid.innerHTML = list
+          .map(
+            (movie) => `
+                <div class="relative bg-white/5 rounded-3xl overflow-hidden glass group" onclick="location.href='detail.html?id=${movie.id}'">
+                    <img src="${IMAGE_BASE_URL}${movie.poster_path}" class="w-full aspect-[2/3] object-cover" alt="${movie.title}">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent p-4 flex flex-col justify-end">
+                        <h4 class="text-xs font-bold truncate">${movie.title}</h4>
+                    </div>
+                    <button onclick="event.stopPropagation(); window.removeFromWishlist(${movie.id})" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-pink-500/20 backdrop-blur-md text-pink-500 flex items-center justify-center text-xs">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                </div>
+            `,
+          )
+          .join("")
+      }
+
+      window.removeFromWishlist = (id) => {
+        storage.toggleWishlist({ id })
+        renderWishlist()
+      }
+
+      init()
+    </script>
+    <script src="js/pwa.js"></script>
+  </body>
+</html>
